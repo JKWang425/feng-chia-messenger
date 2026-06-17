@@ -12,7 +12,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     permissions:
       contents: read #This is required for actions/checkout
 
@@ -20,36 +19,21 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Node.js version
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v3
         with:
-          node-version: '22.x'
+          node-version: '24.x'
 
-      - name: Build Frontend
+      - name: npm install, build, and test
         run: |
-          cd client
           npm install
-          npm run build
-
-      - name: Prepare deployment package
-        run: |
-          mkdir -p deploy/client/dist
-          mkdir -p deploy/server
-          cp -r client/dist/* deploy/client/dist/
-          cp server/package.json deploy/server/
-          cp server/package-lock.json deploy/server/
-          cp server/*.js deploy/server/
-          cp -r server/routes deploy/server/ 2>/dev/null || true
-          cp -r server/middleware deploy/server/ 2>/dev/null || true
-          cp -r server/uploads deploy/server/ 2>/dev/null || true
-          cp package.json deploy/
-          cd deploy
-          zip -r ../release.zip .
+          npm run build --if-present
+          npm run test --if-present
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: release.zip
+          path: .
 
   deploy:
     runs-on: ubuntu-latest
@@ -67,12 +51,9 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_FAC155B584DB49A9BC9ED0C5D4B50E14 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_1033AF582B74469E8298A9F29E46666F }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_4164EA7A33E84060ABBB2E4488971CDD }}
-
-      - name: Start the web app before deployment
-        run: az webapp start --name WebFinalProject --resource-group webfinalproject_group
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_079D1C3882364268B64ABFDCFFE5CAFB }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_165B116E47D6492DAB4BCF0270D49C13 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_554F075D6C4544DA874FDDE70B86F4D9 }}
 
       - name: 'Deploy to Azure Web App'
         id: deploy-to-webapp
@@ -80,6 +61,5 @@ jobs:
         with:
           app-name: 'WebFinalProject'
           slot-name: 'Production'
-          package: release.zip
-          startup-command: 'cd /home/site/wwwroot/server && npm install --production && cd /home/site/wwwroot && node server/index.js'
+          package: .
           
