@@ -8,7 +8,7 @@ on:
 
 env:
   AZURE_WEBAPP_NAME: feng-chia-messenger-app
-  NODE_VERSION: '20.x'
+  NODE_VERSION: '22.x'
 
 jobs:
   build:
@@ -21,6 +21,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
+          cache-dependency-path: '**/package-lock.json'
 
       - name: Build Frontend
         run: |
