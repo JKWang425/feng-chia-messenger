@@ -4,7 +4,8 @@ const multer = require('multer');
 const path = require('path');
 const WebSocket = require('ws');
 const db = require('../database');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, JWT_SECRET } = require('../middleware/auth');
+const jwt = require('jsonwebtoken');
 
 // Setup multer storage
 const storage = multer.diskStorage({
@@ -25,25 +26,51 @@ const broadcast = (wss, message) => {
     });
 };
 
-// Get all posts (with their replies)
+// Helper for JWT decoding without rejecting
+const getOptionalUserId = (req) => {
+    const token = req.cookies.token;
+    if (!token) return null;
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        return decoded.id;
+    } catch {
+        return null;
+    }
+};
+
+// Get all posts with their replies, likes, and saves
 router.get('/', (req, res) => {
-    const postsQuery = 'SELECT * FROM posts ORDER BY created_at DESC';
-    const repliesQuery = 'SELECT * FROM replies ORDER BY created_at ASC';
+    const currentUserId = getOptionalUserId(req);
 
-    db.all(postsQuery, [], (err, posts) => {
+    db.all('SELECT * FROM posts ORDER BY created_at DESC', [], (err, posts) => {
         if (err) return res.status(500).json({ error: err.message });
-        
-        db.all(repliesQuery, [], (err, replies) => {
+
+        db.all('SELECT * FROM replies ORDER BY created_at ASC', [], (err, replies) => {
             if (err) return res.status(500).json({ error: err.message });
+            
+            db.all('SELECT * FROM post_likes', [], (err, likes) => {
+                if (err) return res.status(500).json({ error: err.message });
+                
+                db.all('SELECT * FROM post_saves', [], (err, saves) => {
+                    if (err) return res.status(500).json({ error: err.message });
 
-            const postsWithReplies = posts.map(post => {
-                return {
-                    ...post,
-                    replies: replies.filter(reply => reply.post_id === post.id)
-                };
+                    const postsWithDetails = posts.map(post => {
+                        const postLikes = likes.filter(l => l.post_id === post.id);
+                        const postSaves = saves.filter(s => s.post_id === post.id);
+
+                        return {
+                            ...post,
+                            replies: replies.filter(reply => reply.post_id === post.id),
+                            likesCount: postLikes.length,
+                            savesCount: postSaves.length,
+                            isLiked: currentUserId ? postLikes.some(l => l.user_id === currentUserId) : false,
+                            isSaved: currentUserId ? postSaves.some(s => s.user_id === currentUserId) : false
+                        };
+                    });
+
+                    res.json(postsWithDetails);
+                });
             });
-
-            res.json(postsWithReplies);
         });
     });
 });
@@ -95,6 +122,50 @@ router.post('/:id/replies', authMiddleware, (req, res) => {
         }
 
         res.status(201).json(newReply);
+    });
+});
+
+// Toggle Like
+router.post('/:id/like', authMiddleware, (req, res) => {
+    const postId = req.params.id;
+    const userId = req.user.id;
+
+    db.get('SELECT * FROM post_likes WHERE post_id = ? AND user_id = ?', [postId, userId], (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+
+        if (row) {
+            db.run('DELETE FROM post_likes WHERE post_id = ? AND user_id = ?', [postId, userId], (err) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ message: 'Like removed', isLiked: false });
+            });
+        } else {
+            db.run('INSERT INTO post_likes (post_id, user_id) VALUES (?, ?)', [postId, userId], (err) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ message: 'Like added', isLiked: true });
+            });
+        }
+    });
+});
+
+// Toggle Save
+router.post('/:id/save', authMiddleware, (req, res) => {
+    const postId = req.params.id;
+    const userId = req.user.id;
+
+    db.get('SELECT * FROM post_saves WHERE post_id = ? AND user_id = ?', [postId, userId], (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+
+        if (row) {
+            db.run('DELETE FROM post_saves WHERE post_id = ? AND user_id = ?', [postId, userId], (err) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ message: 'Save removed', isSaved: false });
+            });
+        } else {
+            db.run('INSERT INTO post_saves (post_id, user_id) VALUES (?, ?)', [postId, userId], (err) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ message: 'Save added', isSaved: true });
+            });
+        }
     });
 });
 

@@ -26,6 +26,15 @@
     </div>
 
     <div class="post-footer">
+      <div class="interaction-buttons">
+        <button class="btn-action" :class="{ active: post.isLiked }" @click="toggleLike" title="按讚">
+          <Heart class="icon-sm" :fill="post.isLiked ? 'currentColor' : 'none'" /> {{ post.likesCount || 0 }}
+        </button>
+        <button class="btn-action" :class="{ active: post.isSaved }" @click="toggleSave" title="收藏">
+          <Bookmark class="icon-sm" :fill="post.isSaved ? 'currentColor' : 'none'" /> {{ post.savesCount || 0 }}
+        </button>
+      </div>
+
       <button class="btn-toggle-replies" @click="toggleReplies">
         <MessageSquare class="icon-sm" /> {{ post.replies ? post.replies.length : 0 }} 則留言
         <ChevronDown class="toggle-icon" :class="{ 'is-open': showReplies }" />
@@ -72,7 +81,7 @@
 <script setup>
 import { ref } from 'vue';
 import axios from 'axios';
-import { User, MessageSquare, ChevronDown, Download, Send, Trash2 } from 'lucide-vue-next';
+import { User, MessageSquare, ChevronDown, Download, Send, Trash2, Heart, Bookmark } from 'lucide-vue-next';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 
 const props = defineProps({
@@ -100,10 +109,31 @@ const deletePost = async () => {
   if (!confirm('確定要刪除這篇貼文嗎？')) return;
   try {
     await axios.delete(`http://localhost:3000/api/admin/posts/${props.post.id}`, { withCredentials: true });
-    // WebSocket will trigger refetch automatically
   } catch (err) {
     console.error('Failed to delete post:', err);
     alert('刪除失敗');
+  }
+};
+
+const toggleLike = async () => {
+  if (!props.currentUser) return alert('請先登入才能按讚喔！');
+  try {
+    const res = await axios.post(`http://localhost:3000/api/posts/${props.post.id}/like`, {}, { withCredentials: true });
+    props.post.isLiked = res.data.isLiked;
+    props.post.likesCount += res.data.isLiked ? 1 : -1;
+  } catch (e) {
+    console.error('Like failed', e);
+  }
+};
+
+const toggleSave = async () => {
+  if (!props.currentUser) return alert('請先登入才能收藏喔！');
+  try {
+    const res = await axios.post(`http://localhost:3000/api/posts/${props.post.id}/save`, {}, { withCredentials: true });
+    props.post.isSaved = res.data.isSaved;
+    props.post.savesCount += res.data.isSaved ? 1 : -1;
+  } catch (e) {
+    console.error('Save failed', e);
   }
 };
 
@@ -178,9 +208,15 @@ const downloadPdf = async () => {
 .post-image-container { margin-bottom: 20px; border-radius: 8px; overflow: hidden; }
 .post-image { max-width: 100%; max-height: 400px; object-fit: contain; }
 
-.post-footer { border-top: 1px solid var(--card-border); padding-top: 16px; }
+.post-footer { border-top: 1px solid var(--card-border); padding-top: 16px; display: flex; justify-content: space-between; align-items: center; }
 
-.btn-toggle-replies { display: flex; align-items: center; gap: 8px; background: transparent; color: var(--text-secondary); }
+.interaction-buttons { display: flex; gap: 16px; }
+.btn-action { display: flex; align-items: center; gap: 6px; background: transparent; border: none; color: var(--text-secondary); cursor: pointer; transition: 0.2s; font-size: 0.95rem; }
+.btn-action:hover { color: #fff; transform: scale(1.05); }
+.btn-action.active { color: #ff4757; }
+.btn-action.active:last-child { color: #f1c40f; } /* Yellow for bookmark active */
+
+.btn-toggle-replies { display: flex; align-items: center; gap: 8px; background: transparent; color: var(--text-secondary); border: none; cursor: pointer; transition: 0.2s; }
 .btn-toggle-replies:hover { color: var(--primary-color); }
 .toggle-icon { transition: transform 0.3s ease; }
 .toggle-icon.is-open { transform: rotate(180deg); }

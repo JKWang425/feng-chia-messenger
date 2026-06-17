@@ -3,7 +3,7 @@
     <header class="app-header glass-panel animate-fade-in">
       <div class="header-top">
         <div class="logo">
-          <h1>🎓 逢甲即時通</h1>
+          <h1>🎓 校園生活</h1>
           <p>資訊恆久遠，一站永流傳</p>
         </div>
         <div class="user-actions">
