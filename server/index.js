@@ -49,8 +49,8 @@ const distPath = fs.existsSync(path.join(__dirname, '../client/dist'))
     : path.join(__dirname, 'client/dist');
 
 app.use(express.static(distPath));
-// Catch-all route for SPA (Express 5 syntax)
-app.get('/(.*)', (req, res) => {
+// Catch-all route for SPA (Express 5 compatible using RegExp)
+app.get(/.*/, (req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
 });
 
