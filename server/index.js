@@ -42,10 +42,15 @@ wss.on('connection', (ws) => {
     ws.on('close', () => console.log('Client disconnected'));
 });
 
-// Serve frontend
-app.use(express.static(path.join(__dirname, '../client/dist')));
+// Serve frontend - check both deployment structures
+const fs = require('fs');
+const distPath = fs.existsSync(path.join(__dirname, '../client/dist'))
+    ? path.join(__dirname, '../client/dist')
+    : path.join(__dirname, 'client/dist');
+
+app.use(express.static(distPath));
 app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+    res.sendFile(path.join(distPath, 'index.html'));
 });
 
 server.listen(port, () => {
