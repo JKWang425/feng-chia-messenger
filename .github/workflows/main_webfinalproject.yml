@@ -24,15 +24,26 @@ jobs:
         with:
           node-version: '22.x'
 
-      - name: Build Frontend and Backend
+      - name: Build Frontend
         run: |
           cd client
           npm install
           npm run build
-          cd ../server
-          npm install
-          cd ..
-          zip release.zip ./* -r
+
+      - name: Prepare deployment package
+        run: |
+          mkdir -p deploy/client/dist
+          mkdir -p deploy/server
+          cp -r client/dist/* deploy/client/dist/
+          cp server/package.json deploy/server/
+          cp server/package-lock.json deploy/server/
+          cp server/*.js deploy/server/
+          cp -r server/routes deploy/server/ 2>/dev/null || true
+          cp -r server/middleware deploy/server/ 2>/dev/null || true
+          cp -r server/uploads deploy/server/ 2>/dev/null || true
+          cp package.json deploy/
+          cd deploy
+          zip -r ../release.zip .
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
@@ -60,14 +71,12 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_1033AF582B74469E8298A9F29E46666F }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_4164EA7A33E84060ABBB2E4488971CDD }}
 
-      - name: Unzip artifact for deployment
-        run: unzip release.zip
-
       - name: 'Deploy to Azure Web App'
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'WebFinalProject'
           slot-name: 'Production'
-          package: .
+          package: release.zip
+          startup-command: 'cd /home/site/wwwroot/server && npm install --production && cd /home/site/wwwroot && node server/index.js'
           
