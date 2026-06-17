@@ -11,7 +11,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
     permissions:
       contents: read
 
@@ -32,7 +32,7 @@ jobs:
       - name: Install Server Dependencies
         run: |
           cd server
-          npm install --production
+          npm install --production --build-from-source=sqlite3
 
       - name: Prepare deployment package
         run: |
