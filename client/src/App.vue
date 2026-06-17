@@ -7,8 +7,8 @@
           <p>資訊恆久遠，一站永流傳</p>
         </div>
         <div class="user-actions">
-          <button @click="showStats = !showStats" class="btn-secondary">
-            <BarChart2 class="icon-sm" /> {{ showStats ? '返回貼文' : '統計數據' }}
+          <button v-if="currentUser?.role === 'admin'" @click="showAdmin = !showAdmin" class="btn-secondary">
+            <Shield class="icon-sm" /> {{ showAdmin ? '返回前台' : '管理員後台' }}
           </button>
           
           <template v-if="currentUser">
@@ -23,7 +23,7 @@
     </header>
 
     <main>
-      <div v-if="!showStats">
+      <div v-if="!showAdmin">
         <div class="actions animate-fade-in" style="animation-delay: 0.1s;">
           <button @click="openCreatePost" class="btn-create">
             <PlusCircle class="icon-md" /> 發布新貼文
@@ -47,7 +47,7 @@
         </div>
       </div>
       
-      <Stats v-else :posts="posts" />
+      <AdminDashboard v-else @close="showAdmin = false" />
     </main>
 
     <CreatePost 
@@ -67,17 +67,17 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
-import { BarChart2, PlusCircle } from 'lucide-vue-next';
+import { Shield, PlusCircle } from 'lucide-vue-next';
 import PostItem from './components/PostItem.vue';
 import CreatePost from './components/CreatePost.vue';
 import AuthModal from './components/AuthModal.vue';
-import Stats from './components/Stats.vue';
+import AdminDashboard from './components/AdminDashboard.vue';
 
 const posts = ref([]);
 const loading = ref(true);
 const showCreateModal = ref(false);
 const showAuthModal = ref(false);
-const showStats = ref(false);
+const showAdmin = ref(false);
 const currentUser = ref(null);
 
 let ws = null;
@@ -95,6 +95,7 @@ const logout = async () => {
   try {
     await axios.post('http://localhost:3000/api/auth/logout', {}, { withCredentials: true });
     currentUser.value = null;
+    showAdmin.value = false;
   } catch (err) {
     console.error("Logout failed", err);
   }
@@ -112,6 +113,14 @@ const fetchPosts = async () => {
   }
 };
 
+const trackVisit = async () => {
+  try {
+    await axios.post('http://localhost:3000/api/visits');
+  } catch (e) {
+    console.error('Failed to track visit', e);
+  }
+};
+
 const setupWebSocket = () => {
   ws = new WebSocket('ws://localhost:3000');
   
@@ -126,11 +135,13 @@ const setupWebSocket = () => {
         if (!post.replies) post.replies = [];
         post.replies.push(message.data);
       }
+    } else if (message.type === 'POST_DELETED') {
+      // Refresh the feed when admin deletes something
+      fetchPosts();
     }
   };
 
   ws.onclose = () => {
-    // Reconnect logic could go here
     setTimeout(setupWebSocket, 3000);
   };
 };
@@ -145,7 +156,6 @@ const openCreatePost = () => {
 
 const handlePostCreated = () => {
   showCreateModal.value = false;
-  // Don't need to fetchPosts() if WebSocket is handling it!
 };
 
 const handleAuthSuccess = (user) => {
@@ -154,6 +164,7 @@ const handleAuthSuccess = (user) => {
 };
 
 onMounted(() => {
+  trackVisit();
   checkAuth();
   fetchPosts();
   setupWebSocket();
@@ -174,16 +185,18 @@ onUnmounted(() => {
 .user-actions { display: flex; align-items: center; gap: 16px; }
 .welcome-text { color: var(--text-primary); font-weight: 500; }
 
-.btn-secondary { background: rgba(255,255,255,0.1); color: #fff; display: flex; align-items: center; gap: 8px; }
+.btn-secondary { background: rgba(255,255,255,0.1); color: #fff; display: flex; align-items: center; gap: 8px; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; transition: 0.2s; font-size: 1rem; }
 .btn-secondary:hover { background: rgba(255,255,255,0.2); }
 
-.btn-danger { background: rgba(255, 71, 87, 0.2); color: var(--danger); }
+.btn-danger { background: rgba(255, 71, 87, 0.2); color: var(--danger); border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; transition: 0.2s; font-weight: bold; }
 .btn-danger:hover { background: var(--danger); color: #fff; }
 
-.btn-primary { background: var(--primary-color); color: #fff; }
+.btn-primary { background: var(--primary-color); color: #fff; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; transition: 0.2s; font-weight: bold; }
+.btn-primary:hover { background: var(--primary-hover); }
 
 .actions { display: flex; justify-content: flex-end; margin-bottom: 24px; }
-.btn-create { display: flex; align-items: center; gap: 8px; font-size: 1.1rem; padding: 12px 24px; border-radius: 30px; box-shadow: 0 4px 15px rgba(247, 160, 64, 0.4); }
+.btn-create { display: flex; align-items: center; gap: 8px; font-size: 1.1rem; padding: 12px 24px; border-radius: 30px; box-shadow: 0 4px 15px rgba(247, 160, 64, 0.4); border: none; color: #fff; background: var(--primary-color); cursor: pointer; transition: 0.2s; }
+.btn-create:hover { background: var(--primary-hover); transform: translateY(-2px); }
 
 .post-feed { display: flex; flex-direction: column; gap: 20px; }
 .empty-state, .loading-state { text-align: center; padding: 40px; color: var(--text-secondary); font-size: 1.2rem; }

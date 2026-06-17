@@ -8,14 +8,22 @@ const db = new sqlite3.Database(dbPath, (err) => {
         console.error('Error opening database', err.message);
     } else {
         console.log('Connected to the SQLite database.');
-        
         // Create tables
         db.serialize(() => {
+            // Enable foreign keys
+            db.run('PRAGMA foreign_keys = ON');
+
             db.run(`CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
                 password TEXT NOT NULL,
+                role TEXT DEFAULT 'user',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`);
+
+            db.run(`CREATE TABLE IF NOT EXISTS site_visits (
+                date DATE PRIMARY KEY,
+                count INTEGER DEFAULT 0
             )`);
 
             db.run(`CREATE TABLE IF NOT EXISTS posts (

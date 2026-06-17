@@ -6,6 +6,9 @@
         <span class="post-date">{{ formatDate(post.created_at) }}</span>
       </div>
       <div class="post-actions">
+        <button v-if="currentUser?.role === 'admin'" @click="deletePost" class="btn-icon btn-delete" title="刪除貼文">
+          <Trash2 class="icon-sm" />
+        </button>
         <button @click="downloadPdf" class="btn-icon" title="下載 PDF">
           <Download class="icon-sm" />
         </button>
@@ -69,7 +72,7 @@
 <script setup>
 import { ref } from 'vue';
 import axios from 'axios';
-import { User, MessageSquare, ChevronDown, Download, Send } from 'lucide-vue-next';
+import { User, MessageSquare, ChevronDown, Download, Send, Trash2 } from 'lucide-vue-next';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 
 const props = defineProps({
@@ -89,6 +92,17 @@ const formatDate = (dateString) => {
   if (!dateString) return '';
   const date = new Date(dateString);
   return date.toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+};
+
+const deletePost = async () => {
+  if (!confirm('確定要刪除這篇貼文嗎？')) return;
+  try {
+    await axios.delete(`http://localhost:3000/api/admin/posts/${props.post.id}`, { withCredentials: true });
+    // WebSocket will trigger refetch automatically
+  } catch (err) {
+    console.error('Failed to delete post:', err);
+    alert('刪除失敗');
+  }
 };
 
 const submitReply = async () => {
@@ -152,8 +166,9 @@ const downloadPdf = async () => {
 }
 .post-date { color: var(--text-secondary); font-size: 0.85rem; }
 
-.btn-icon { background: transparent; color: var(--text-secondary); padding: 4px; border-radius: 4px; }
+.btn-icon { background: transparent; color: var(--text-secondary); padding: 4px; border-radius: 4px; border: none; cursor: pointer; transition: 0.2s;}
 .btn-icon:hover { color: var(--primary-color); background: rgba(255,255,255,0.1); }
+.btn-delete:hover { color: var(--danger); }
 
 .post-title { font-size: 1.4rem; margin-bottom: 16px; line-height: 1.3; }
 .post-content { color: var(--text-primary); font-size: 1rem; line-height: 1.6; white-space: pre-wrap; margin-bottom: 20px; }

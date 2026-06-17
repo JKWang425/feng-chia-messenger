@@ -43,7 +43,7 @@ router.post('/login', (req, res) => {
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(401).json({ error: 'Invalid username or password' });
 
-        const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '24h' });
+        const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
         
         res.cookie('token', token, { 
             httpOnly: true, 
@@ -52,7 +52,7 @@ router.post('/login', (req, res) => {
             maxAge: 24 * 60 * 60 * 1000 
         });
 
-        res.json({ message: 'Logged in successfully', user: { id: user.id, username: user.username }, token });
+        res.json({ message: 'Logged in successfully', user: { id: user.id, username: user.username, role: user.role }, token });
     });
 });
 

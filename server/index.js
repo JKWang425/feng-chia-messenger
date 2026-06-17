@@ -7,6 +7,8 @@ const path = require('path');
 
 const postsRouter = require('./routes/posts');
 const authRouter = require('./routes/auth');
+const adminRouter = require('./routes/admin');
+const visitsRouter = require('./routes/visits');
 
 const app = express();
 const server = http.createServer(app);
@@ -28,6 +30,8 @@ app.use((req, res, next) => {
 
 app.use('/api/auth', authRouter);
 app.use('/api/posts', postsRouter);
+app.use('/api/admin', adminRouter);
+app.use('/api/visits', visitsRouter);
 
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok' });

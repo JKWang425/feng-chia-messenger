@@ -1,3 +1,4 @@
+const bcrypt = require('bcrypt');
 const db = require('./database');
 
 const seedData = [
@@ -37,44 +38,59 @@ const seedData = [
     }
 ];
 
-setTimeout(() => {
-    db.serialize(() => {
-        // Clear existing data
-        db.run('DELETE FROM replies');
-        db.run('DELETE FROM posts');
+setTimeout(async () => {
+    try {
+        const adminPassword = await bcrypt.hash('admin123', 10);
+        
+        db.serialize(() => {
+            // Clear existing data
+            db.run('DELETE FROM replies');
+            db.run('DELETE FROM posts');
+            db.run('DELETE FROM users');
+            db.run('DELETE FROM site_visits');
 
-        console.log('Inserting seed data...');
+            console.log('Inserting seed data...');
 
-        const insertPost = db.prepare('INSERT INTO posts (title, content, author) VALUES (?, ?, ?)');
-        const insertReply = db.prepare('INSERT INTO replies (post_id, content, author) VALUES (?, ?, ?)');
+            db.run('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', ['admin', adminPassword, 'admin']);
 
-        let completedPosts = 0;
+            const today = new Date().toISOString().split('T')[0];
+            db.run('INSERT INTO site_visits (date, count) VALUES (?, ?)', [today, 42]);
+            
+            const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+            db.run('INSERT INTO site_visits (date, count) VALUES (?, ?)', [yesterday, 30]);
 
-        seedData.forEach((postData) => {
-            insertPost.run([postData.title, postData.content, postData.author], function(err) {
-                if (err) {
-                    console.error(err);
-                    return;
-                }
-                
-                const postId = this.lastID;
-                
-                postData.replies.forEach(reply => {
-                    insertReply.run([postId, reply.content, reply.author], (err) => {
-                        if (err) console.error(err);
-                    });
-                });
+            const insertPost = db.prepare('INSERT INTO posts (title, content, author) VALUES (?, ?, ?)');
+            const insertReply = db.prepare('INSERT INTO replies (post_id, content, author) VALUES (?, ?, ?)');
 
-                completedPosts++;
-                if (completedPosts === seedData.length) {
-                    console.log('Seed data inserted successfully!');
-                    insertPost.finalize();
-                    insertReply.finalize();
+            let completedPosts = 0;
+
+            seedData.forEach((postData) => {
+                insertPost.run([postData.title, postData.content, postData.author], function(err) {
+                    if (err) {
+                        console.error(err);
+                        return;
+                    }
                     
-                    // Close DB after all operations
-                    setTimeout(() => db.close(), 1000);
-                }
+                    const postId = this.lastID;
+                    
+                    postData.replies.forEach(reply => {
+                        insertReply.run([postId, reply.content, reply.author], (err) => {
+                            if (err) console.error(err);
+                        });
+                    });
+
+                    completedPosts++;
+                    if (completedPosts === seedData.length) {
+                        console.log('Seed data inserted successfully!');
+                        insertPost.finalize();
+                        insertReply.finalize();
+                        
+                        setTimeout(() => db.close(), 1000);
+                    }
+                });
             });
         });
-    });
+    } catch (err) {
+        console.error('Seed Error:', err);
+    }
 }, 1000);
