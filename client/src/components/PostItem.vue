@@ -90,7 +90,9 @@ const toggleReplies = () => { showReplies.value = !showReplies.value; };
 
 const formatDate = (dateString) => {
   if (!dateString) return '';
-  const date = new Date(dateString);
+  // Convert SQLite UTC "YYYY-MM-DD HH:MM:SS" to ISO "YYYY-MM-DDTHH:MM:SSZ"
+  const utcDateString = dateString.includes('T') ? dateString : dateString.replace(' ', 'T') + 'Z';
+  const date = new Date(utcDateString);
   return date.toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 

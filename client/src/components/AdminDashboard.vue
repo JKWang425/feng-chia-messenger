@@ -73,7 +73,8 @@ const chartOptions = {
 
 const formatDate = (dateString) => {
   if (!dateString) return '';
-  return new Date(dateString).toLocaleDateString('zh-TW');
+  const utcDateString = dateString.includes('T') ? dateString : dateString.replace(' ', 'T') + 'Z';
+  return new Date(utcDateString).toLocaleDateString('zh-TW');
 };
 
 const fetchData = async () => {
