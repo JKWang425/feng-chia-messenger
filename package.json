@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "description": "Root package.json for Azure App Service deployment",
   "scripts": {
-    "start": "cd server && node index.js"
+    "start": "node server/index.js"
   }
 }
