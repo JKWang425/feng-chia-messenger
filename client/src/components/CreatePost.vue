@@ -59,7 +59,7 @@ const submitPost = async () => {
       formData.append('image', selectedFile.value);
     }
 
-    const response = await axios.post('http://localhost:3000/api/posts', formData, {
+    const response = await axios.post('/api/posts', formData, {
       withCredentials: true,
       headers: { 'Content-Type': 'multipart/form-data' }
     });

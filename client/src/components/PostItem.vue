@@ -22,7 +22,7 @@
     </div>
 
     <div v-if="post.image_url" class="post-image-container">
-      <img :src="`http://localhost:3000${post.image_url}`" alt="Post Image" class="post-image" />
+      <img :src="post.image_url" alt="Post Image" class="post-image" />
     </div>
 
     <div class="post-footer">
@@ -108,7 +108,7 @@ const formatDate = (dateString) => {
 const deletePost = async () => {
   if (!confirm('確定要刪除這篇貼文嗎？')) return;
   try {
-    await axios.delete(`http://localhost:3000/api/admin/posts/${props.post.id}`, { withCredentials: true });
+    await axios.delete(`/api/admin/posts/${props.post.id}`, { withCredentials: true });
   } catch (err) {
     console.error('Failed to delete post:', err);
     alert('刪除失敗');
@@ -118,7 +118,7 @@ const deletePost = async () => {
 const toggleLike = async () => {
   if (!props.currentUser) return alert('請先登入才能按讚喔！');
   try {
-    const res = await axios.post(`http://localhost:3000/api/posts/${props.post.id}/like`, {}, { withCredentials: true });
+    const res = await axios.post(`/api/posts/${props.post.id}/like`, {}, { withCredentials: true });
     props.post.isLiked = res.data.isLiked;
     props.post.likesCount += res.data.isLiked ? 1 : -1;
   } catch (e) {
@@ -129,7 +129,7 @@ const toggleLike = async () => {
 const toggleSave = async () => {
   if (!props.currentUser) return alert('請先登入才能收藏喔！');
   try {
-    const res = await axios.post(`http://localhost:3000/api/posts/${props.post.id}/save`, {}, { withCredentials: true });
+    const res = await axios.post(`/api/posts/${props.post.id}/save`, {}, { withCredentials: true });
     props.post.isSaved = res.data.isSaved;
     props.post.savesCount += res.data.isSaved ? 1 : -1;
   } catch (e) {
@@ -142,14 +142,12 @@ const submitReply = async () => {
   
   isSubmitting.value = true;
   try {
-    const response = await axios.post(`http://localhost:3000/api/posts/${props.post.id}/replies`, {
+    const response = await axios.post(`/api/posts/${props.post.id}/replies`, {
       content: replyContent.value
     }, { withCredentials: true });
 
     if (response.status === 201) {
       replyContent.value = '';
-      // We don't necessarily emit 'reply-added' if WebSockets are handling updates,
-      // but emitting is safe for backward compatibility.
       emit('reply-added');
     }
   } catch (error) {

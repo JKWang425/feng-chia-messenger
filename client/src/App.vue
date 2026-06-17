@@ -84,7 +84,7 @@ let ws = null;
 
 const checkAuth = async () => {
   try {
-    const res = await axios.get('http://localhost:3000/api/auth/me', { withCredentials: true });
+    const res = await axios.get('/api/auth/me', { withCredentials: true });
     currentUser.value = res.data.user;
   } catch (err) {
     currentUser.value = null;
@@ -93,7 +93,7 @@ const checkAuth = async () => {
 
 const logout = async () => {
   try {
-    await axios.post('http://localhost:3000/api/auth/logout', {}, { withCredentials: true });
+    await axios.post('/api/auth/logout', {}, { withCredentials: true });
     currentUser.value = null;
     showAdmin.value = false;
   } catch (err) {
@@ -104,7 +104,7 @@ const logout = async () => {
 const fetchPosts = async () => {
   try {
     loading.value = true;
-    const response = await axios.get('http://localhost:3000/api/posts');
+    const response = await axios.get('/api/posts');
     posts.value = response.data;
   } catch (error) {
     console.error('Error fetching posts:', error);
@@ -115,14 +115,16 @@ const fetchPosts = async () => {
 
 const trackVisit = async () => {
   try {
-    await axios.post('http://localhost:3000/api/visits');
+    await axios.post('/api/visits');
   } catch (e) {
     console.error('Failed to track visit', e);
   }
 };
 
 const setupWebSocket = () => {
-  ws = new WebSocket('ws://localhost:3000');
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsHost = import.meta.env.PROD ? window.location.host : 'localhost:3000';
+  ws = new WebSocket(`${wsProtocol}//${wsHost}`);
   
   ws.onmessage = (event) => {
     const message = JSON.parse(event.data);

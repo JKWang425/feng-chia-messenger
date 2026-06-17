@@ -80,8 +80,8 @@ const formatDate = (dateString) => {
 const fetchData = async () => {
   try {
     const [visitsRes, usersRes] = await Promise.all([
-      axios.get('http://localhost:3000/api/admin/visits', { withCredentials: true }),
-      axios.get('http://localhost:3000/api/admin/users', { withCredentials: true })
+      axios.get('/api/admin/visits', { withCredentials: true }),
+      axios.get('/api/admin/users', { withCredentials: true })
     ]);
 
     users.value = usersRes.data;
@@ -106,7 +106,7 @@ const deleteUser = async (id) => {
   if (!confirm('確定要刪除這個使用者嗎？這將會連帶刪除他的所有貼文與留言！')) return;
   
   try {
-    await axios.delete(`http://localhost:3000/api/admin/users/${id}`, { withCredentials: true });
+    await axios.delete(`/api/admin/users/${id}`, { withCredentials: true });
     fetchData(); // reload users
   } catch (err) {
     console.error(err);

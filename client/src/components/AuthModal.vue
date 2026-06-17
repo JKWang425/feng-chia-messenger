@@ -66,7 +66,7 @@ const submitAuth = async () => {
   const endpoint = isLogin.value ? '/api/auth/login' : '/api/auth/register';
   
   try {
-    const response = await axios.post(`http://localhost:3000${endpoint}`, form, {
+    const response = await axios.post(endpoint, form, {
       withCredentials: true // send cookies
     });
     
