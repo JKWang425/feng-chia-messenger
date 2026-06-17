@@ -71,6 +71,9 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_1033AF582B74469E8298A9F29E46666F }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_4164EA7A33E84060ABBB2E4488971CDD }}
 
+      - name: Start the web app before deployment
+        run: az webapp start --name WebFinalProject --resource-group webfinalproject_group
+
       - name: 'Deploy to Azure Web App'
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
