@@ -8,6 +8,15 @@
 
       <form @submit.prevent="submitPost" class="post-form">
         <div class="form-group">
+          <label for="board">選擇看板</label>
+          <select id="board" v-model="form.board_id" required>
+            <option v-for="board in boards" :key="board.id" :value="board.id">
+              {{ board.name }}
+            </option>
+          </select>
+        </div>
+
+        <div class="form-group">
           <label for="title">標題</label>
           <input type="text" id="title" v-model="form.title" placeholder="請輸入標題" required maxlength="100">
         </div>
@@ -37,9 +46,14 @@
 import { reactive, ref } from 'vue';
 import axios from 'axios';
 
+const props = defineProps(['boards', 'currentBoardId']);
 const emit = defineEmits(['close', 'post-created']);
 
-const form = reactive({ title: '', content: '' });
+const form = reactive({ 
+  title: '', 
+  content: '', 
+  board_id: props.currentBoardId || (props.boards.length > 0 ? props.boards[0].id : 1) 
+});
 const selectedFile = ref(null);
 const isSubmitting = ref(false);
 
@@ -55,6 +69,7 @@ const submitPost = async () => {
     const formData = new FormData();
     formData.append('title', form.title);
     formData.append('content', form.content);
+    formData.append('board_id', form.board_id);
     if (selectedFile.value) {
       formData.append('image', selectedFile.value);
     }
@@ -94,6 +109,8 @@ const submitPost = async () => {
 .btn-close:hover { color: var(--danger); transform: scale(1.1); }
 .form-group { margin-bottom: 20px; }
 .form-group label { display: block; margin-bottom: 8px; font-weight: 500; }
+select { width: 100%; padding: 12px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: rgba(0,0,0,0.2); color: #fff; font-size: 1rem; }
+select option { background: #1a1e36; color: #fff; }
 input[type="file"] { padding: 8px; }
 .form-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 30px; }
 .btn-cancel { background: transparent; border: 1px solid var(--text-secondary); color: var(--text-primary); }

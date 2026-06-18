@@ -27,7 +27,7 @@ router.get('/users', (req, res) => {
 // Delete a user (and their posts/replies)
 router.delete('/users/:id', (req, res) => {
     const userId = req.params.id;
-    
+
     // First get the user's username to delete their posts
     db.get('SELECT username FROM users WHERE id = ?', [userId], (err, user) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -38,15 +38,15 @@ router.delete('/users/:id', (req, res) => {
         db.serialize(() => {
             // Delete replies by this author
             db.run('DELETE FROM replies WHERE author = ?', [username]);
-            
+
             // Delete replies on posts by this author
             db.run(`DELETE FROM replies WHERE post_id IN (SELECT id FROM posts WHERE author = ?)`, [username]);
-            
+
             // Delete posts by this author
             db.run('DELETE FROM posts WHERE author = ?', [username]);
-            
+
             // Delete user
-            db.run('DELETE FROM users WHERE id = ?', [userId], function(err) {
+            db.run('DELETE FROM users WHERE id = ?', [userId], function (err) {
                 if (err) return res.status(500).json({ error: err.message });
                 res.json({ message: 'User and all associated data deleted successfully' });
                 broadcast(req.wss, { type: 'POST_DELETED', data: null }); // trigger refetch
@@ -60,7 +60,7 @@ router.delete('/posts/:id', (req, res) => {
     const postId = req.params.id;
     db.serialize(() => {
         db.run('DELETE FROM replies WHERE post_id = ?', [postId]);
-        db.run('DELETE FROM posts WHERE id = ?', [postId], function(err) {
+        db.run('DELETE FROM posts WHERE id = ?', [postId], function (err) {
             if (err) return res.status(500).json({ error: err.message });
             res.json({ message: 'Post and its replies deleted successfully' });
             broadcast(req.wss, { type: 'POST_DELETED', data: { id: Number(postId) } });

@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const http = require('http');
 const WebSocket = require('ws');
@@ -9,12 +10,28 @@ const postsRouter = require('./routes/posts');
 const authRouter = require('./routes/auth');
 const adminRouter = require('./routes/admin');
 const visitsRouter = require('./routes/visits');
+const boardRouter = require('./routes/boards');
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 const port = process.env.PORT || 3000;
+
+// Set HTTP security headers with Helmet
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // 'unsafe-eval' required for some dev tooling
+            styleSrc: ["'self'", "'unsafe-inline'", "fonts.googleapis.com"],
+            fontSrc: ["'self'", "fonts.gstatic.com"],
+            imgSrc: ["'self'", "data:", "blob:"],
+            connectSrc: ["'self'", "http://localhost:5173", "ws://localhost:5173", "ws:", "wss:"],
+        },
+    },
+    crossOriginEmbedderPolicy: false,
+}));
 
 // Update CORS to allow cookies
 app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
@@ -32,6 +49,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/posts', postsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/visits', visitsRouter);
+app.use('/api/boards', boardRouter);
 
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok' });

@@ -7,15 +7,15 @@ const { JWT_SECRET } = require('../middleware/auth');
 
 router.post('/register', async (req, res) => {
     const { username, password } = req.body;
-    
+
     if (!username || !password) {
         return res.status(400).json({ error: 'Username and password are required' });
     }
 
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
-        
-        db.run('INSERT INTO users (username, password) VALUES (?, ?)', [username, hashedPassword], function(err) {
+
+        db.run('INSERT INTO users (username, password) VALUES (?, ?)', [username, hashedPassword], function (err) {
             if (err) {
                 if (err.message.includes('UNIQUE constraint failed')) {
                     return res.status(400).json({ error: 'Username already exists' });
@@ -44,15 +44,18 @@ router.post('/login', (req, res) => {
         if (!isMatch) return res.status(401).json({ error: 'Invalid username or password' });
 
         const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
-        
-        res.cookie('token', token, { 
-            httpOnly: true, 
+
+        res.cookie('token', token, {
+            httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'lax',
-            maxAge: 24 * 60 * 60 * 1000 
+            maxAge: 24 * 60 * 60 * 1000
         });
 
-        res.json({ message: 'Logged in successfully', user: { id: user.id, username: user.username, role: user.role }, token });
+        db.all('SELECT board_id FROM board_moderators WHERE user_id = ?', [user.id], (err, mods) => {
+            const moderatedBoards = mods ? mods.map(m => m.board_id) : [];
+            res.json({ message: 'Logged in successfully', user: { id: user.id, username: user.username, role: user.role, moderated_boards: moderatedBoards }, token });
+        });
     });
 });
 
@@ -67,7 +70,10 @@ router.get('/me', (req, res) => {
 
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
-        res.json({ user: decoded });
+        db.all('SELECT board_id FROM board_moderators WHERE user_id = ?', [decoded.id], (err, mods) => {
+            const moderatedBoards = mods ? mods.map(m => m.board_id) : [];
+            res.json({ user: { ...decoded, moderated_boards: moderatedBoards } });
+        });
     } catch (err) {
         res.json({ user: null });
     }

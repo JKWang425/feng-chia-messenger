@@ -22,9 +22,29 @@
       </div>
     </header>
 
-    <main>
-      <div v-if="!showAdmin">
+    <main class="main-layout">
+      <aside v-if="!showAdmin" class="sidebar glass-panel animate-fade-in">
+        <div class="sidebar-section">
+          <h3>看板分類</h3>
+          <ul class="board-list">
+            <li :class="{ active: currentBoardId === null }" @click="currentBoardId = null; fetchPosts()">
+              🌟 全部貼文
+            </li>
+            <li v-for="board in boards" :key="board.id" 
+                :class="{ active: currentBoardId === board.id }" 
+                @click="currentBoardId = board.id; fetchPosts()">
+              {{ board.name }}
+            </li>
+          </ul>
+        </div>
+      </aside>
+
+      <div class="content-area" v-if="!showAdmin">
         <div class="actions animate-fade-in" style="animation-delay: 0.1s;">
+          <div class="sort-options">
+            <button :class="['btn-sort', { active: currentSort === 'latest' }]" @click="currentSort = 'latest'; fetchPosts()">最新</button>
+            <button :class="['btn-sort', { active: currentSort === 'popular' }]" @click="currentSort = 'popular'; fetchPosts()">熱門</button>
+          </div>
           <button @click="openCreatePost" class="btn-create">
             <PlusCircle class="icon-md" /> 發布新貼文
           </button>
@@ -36,6 +56,7 @@
             :key="post.id" 
             :post="post" 
             :currentUser="currentUser"
+            :boards="boards"
             @reply-added="fetchPosts"
             class="animate-fade-in"
             :style="{ animationDelay: `${(index + 2) * 0.1}s` }"
@@ -52,6 +73,8 @@
 
     <CreatePost 
       v-if="showCreateModal" 
+      :boards="boards"
+      :currentBoardId="currentBoardId"
       @close="showCreateModal = false" 
       @post-created="handlePostCreated" 
     />
@@ -79,8 +102,20 @@ const showCreateModal = ref(false);
 const showAuthModal = ref(false);
 const showAdmin = ref(false);
 const currentUser = ref(null);
+const boards = ref([]);
+const currentBoardId = ref(null);
+const currentSort = ref('latest');
 
 let ws = null;
+
+const fetchBoards = async () => {
+  try {
+    const res = await axios.get('/api/boards');
+    boards.value = res.data;
+  } catch (err) {
+    console.error('Failed to fetch boards:', err);
+  }
+};
 
 const checkAuth = async () => {
   try {
@@ -104,7 +139,10 @@ const logout = async () => {
 const fetchPosts = async () => {
   try {
     loading.value = true;
-    const response = await axios.get('/api/posts');
+    let url = `/api/posts?sort=${currentSort.value}`;
+    if (currentBoardId.value) url += `&board_id=${currentBoardId.value}`;
+    
+    const response = await axios.get(url);
     posts.value = response.data;
   } catch (error) {
     console.error('Error fetching posts:', error);
@@ -168,6 +206,7 @@ const handleAuthSuccess = (user) => {
 onMounted(() => {
   trackVisit();
   checkAuth();
+  fetchBoards();
   fetchPosts();
   setupWebSocket();
 });
@@ -196,9 +235,23 @@ onUnmounted(() => {
 .btn-primary { background: var(--primary-color); color: #fff; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; transition: 0.2s; font-weight: bold; }
 .btn-primary:hover { background: var(--primary-hover); }
 
-.actions { display: flex; justify-content: flex-end; margin-bottom: 24px; }
+.actions { display: flex; justify-content: space-between; margin-bottom: 24px; align-items: center; }
 .btn-create { display: flex; align-items: center; gap: 8px; font-size: 1.1rem; padding: 12px 24px; border-radius: 30px; box-shadow: 0 4px 15px rgba(247, 160, 64, 0.4); border: none; color: #fff; background: var(--primary-color); cursor: pointer; transition: 0.2s; }
 .btn-create:hover { background: var(--primary-hover); transform: translateY(-2px); }
+
+.main-layout { display: flex; gap: 24px; }
+.sidebar { width: 250px; flex-shrink: 0; padding: 20px; align-self: flex-start; position: sticky; top: 20px; }
+.sidebar h3 { font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 12px; padding-left: 8px; }
+.content-area { flex-grow: 1; min-width: 0; }
+.board-list { list-style: none; padding: 0; margin: 0; }
+.board-list li { padding: 12px 16px; margin-bottom: 8px; border-radius: 8px; cursor: pointer; transition: 0.2s; color: var(--text-secondary); font-weight: 500; }
+.board-list li:hover { background: rgba(255,255,255,0.1); color: var(--text-primary); }
+.board-list li.active { background: var(--primary-color); color: white; }
+
+.sort-options { display: flex; gap: 8px; }
+.btn-sort { padding: 8px 16px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.2); background: transparent; color: var(--text-secondary); cursor: pointer; transition: 0.2s; font-weight: 600; }
+.btn-sort:hover { background: rgba(255,255,255,0.05); }
+.btn-sort.active { background: rgba(255,255,255,0.1); color: var(--text-primary); border-color: var(--primary-color); }
 
 .post-feed { display: flex; flex-direction: column; gap: 20px; }
 .empty-state, .loading-state { text-align: center; padding: 40px; color: var(--text-secondary); font-size: 1.2rem; }

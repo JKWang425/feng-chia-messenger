@@ -2,11 +2,12 @@
   <article class="post-card glass-panel">
     <div class="post-header">
       <div class="post-meta">
+        <span class="board-badge">{{ boardName }}</span>
         <span class="author-badge"><User class="icon-sm" /> {{ post.author }}</span>
         <span class="post-date">{{ formatDate(post.created_at) }}</span>
       </div>
       <div class="post-actions">
-        <button v-if="currentUser?.role === 'admin'" @click="deletePost" class="btn-icon btn-delete" title="刪除貼文">
+        <button v-if="canDelete" @click="deletePost" class="btn-icon btn-delete" title="刪除貼文">
           <Trash2 class="icon-sm" />
         </button>
         <button @click="downloadPdf" class="btn-icon" title="下載 PDF">
@@ -79,14 +80,15 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import axios from 'axios';
 import { User, MessageSquare, ChevronDown, Download, Send, Trash2, Heart, Bookmark } from 'lucide-vue-next';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 
 const props = defineProps({
   post: { type: Object, required: true },
-  currentUser: { type: Object, default: null }
+  currentUser: { type: Object, default: null },
+  boards: { type: Array, default: () => [] }
 });
 
 const emit = defineEmits(['reply-added']);
@@ -94,6 +96,19 @@ const emit = defineEmits(['reply-added']);
 const showReplies = ref(false);
 const isSubmitting = ref(false);
 const replyContent = ref('');
+
+const boardName = computed(() => {
+  const board = props.boards.find(b => b.id === props.post.board_id);
+  return board ? board.name : '未分類';
+});
+
+const canDelete = computed(() => {
+  if (!props.currentUser) return false;
+  if (props.currentUser.role === 'admin') return true;
+  if (props.currentUser.username === props.post.author) return true;
+  if (props.currentUser.moderated_boards?.includes(props.post.board_id)) return true;
+  return false;
+});
 
 const toggleReplies = () => { showReplies.value = !showReplies.value; };
 
@@ -108,10 +123,14 @@ const formatDate = (dateString) => {
 const deletePost = async () => {
   if (!confirm('確定要刪除這篇貼文嗎？')) return;
   try {
-    await axios.delete(`/api/admin/posts/${props.post.id}`, { withCredentials: true });
+    await axios.delete(`/api/posts/${props.post.id}`, { withCredentials: true });
   } catch (err) {
-    console.error('Failed to delete post:', err);
-    alert('刪除失敗');
+    if (err.response?.status === 403) {
+      alert('您沒有權限刪除這篇貼文');
+    } else {
+      console.error('Failed to delete post:', err);
+      alert('刪除失敗');
+    }
   }
 };
 
@@ -188,7 +207,10 @@ const downloadPdf = async () => {
 .post-card:hover { transform: translateY(-2px); box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.4); }
 
 .post-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
-.post-meta { display: flex; align-items: center; gap: 12px; }
+.post-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.board-badge {
+  background: var(--primary-color); color: #fff; padding: 4px 10px; border-radius: 6px; font-size: 0.85rem; font-weight: 600;
+}
 .author-badge { 
   display: flex; align-items: center; gap: 4px;
   background: rgba(247, 160, 64, 0.2); color: var(--primary-color); 
