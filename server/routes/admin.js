@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../database');
+const { sql, poolPromise } = require('../database');
 const { adminMiddleware } = require('../middleware/auth');
 const WebSocket = require('ws');
 
@@ -17,63 +17,94 @@ const broadcast = (wss, message) => {
 router.use(adminMiddleware);
 
 // Get all users
-router.get('/users', (req, res) => {
-    db.all('SELECT id, username, role, created_at FROM users', [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
+router.get('/users', async (req, res) => {
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request().query('SELECT id, username, role, created_at FROM users');
+        res.json(result.recordset);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-// Delete a user (and their posts/replies)
-router.delete('/users/:id', (req, res) => {
+// Delete a user (and their posts/replies/likes/saves)
+router.delete('/users/:id', async (req, res) => {
     const userId = req.params.id;
 
-    // First get the user's username to delete their posts
-    db.get('SELECT username FROM users WHERE id = ?', [userId], (err, user) => {
-        if (err) return res.status(500).json({ error: err.message });
+    try {
+        const pool = await poolPromise;
+        const userResult = await pool.request()
+            .input('userId', sql.Int, userId)
+            .query('SELECT username FROM users WHERE id = @userId');
+            
+        const user = userResult.recordset[0];
         if (!user) return res.status(404).json({ error: 'User not found' });
 
         const username = user.username;
 
-        db.serialize(() => {
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            const request = new sql.Request(transaction);
+            request.input('username', sql.NVarChar, username);
+            request.input('userId', sql.Int, userId);
+
+            // Delete junction records associated with user
+            await request.query('DELETE FROM board_moderators WHERE user_id = @userId');
+            await request.query('DELETE FROM post_likes WHERE user_id = @userId');
+            await request.query('DELETE FROM post_saves WHERE user_id = @userId');
+
             // Delete replies by this author
-            db.run('DELETE FROM replies WHERE author = ?', [username]);
+            await request.query('DELETE FROM replies WHERE author = @username');
 
             // Delete replies on posts by this author
-            db.run(`DELETE FROM replies WHERE post_id IN (SELECT id FROM posts WHERE author = ?)`, [username]);
+            await request.query('DELETE FROM replies WHERE post_id IN (SELECT id FROM posts WHERE author = @username)');
 
             // Delete posts by this author
-            db.run('DELETE FROM posts WHERE author = ?', [username]);
+            await request.query('DELETE FROM posts WHERE author = @username');
 
             // Delete user
-            db.run('DELETE FROM users WHERE id = ?', [userId], function (err) {
-                if (err) return res.status(500).json({ error: err.message });
-                res.json({ message: 'User and all associated data deleted successfully' });
-                broadcast(req.wss, { type: 'POST_DELETED', data: null }); // trigger refetch
-            });
-        });
-    });
+            await request.query('DELETE FROM users WHERE id = @userId');
+
+            await transaction.commit();
+            res.json({ message: 'User and all associated data deleted successfully' });
+            broadcast(req.wss, { type: 'POST_DELETED', data: null }); // trigger refetch
+        } catch (err) {
+            await transaction.rollback();
+            res.status(500).json({ error: err.message });
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Delete a post
-router.delete('/posts/:id', (req, res) => {
+router.delete('/posts/:id', async (req, res) => {
     const postId = req.params.id;
-    db.serialize(() => {
-        db.run('DELETE FROM replies WHERE post_id = ?', [postId]);
-        db.run('DELETE FROM posts WHERE id = ?', [postId], function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ message: 'Post and its replies deleted successfully' });
-            broadcast(req.wss, { type: 'POST_DELETED', data: { id: Number(postId) } });
-        });
-    });
+    try {
+        const pool = await poolPromise;
+        // Due to ON DELETE CASCADE for post_id, deleting post will delete related replies, likes, saves
+        await pool.request()
+            .input('postId', sql.Int, postId)
+            .query('DELETE FROM posts WHERE id = @postId');
+            
+        res.json({ message: 'Post and its relations deleted successfully' });
+        broadcast(req.wss, { type: 'POST_DELETED', data: { id: Number(postId) } });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Get daily visits
-router.get('/visits', (req, res) => {
-    db.all('SELECT * FROM site_visits ORDER BY date ASC', [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
+router.get('/visits', async (req, res) => {
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request().query('SELECT * FROM site_visits ORDER BY date ASC');
+        res.json(result.recordset);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 module.exports = router;

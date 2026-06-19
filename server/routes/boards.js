@@ -1,13 +1,16 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../database');
+const { poolPromise } = require('../database');
 
 // Get all boards
-router.get('/', (req, res) => {
-    db.all('SELECT * FROM boards ORDER BY id ASC', [], (err, boards) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(boards);
-    });
+router.get('/', async (req, res) => {
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request().query('SELECT * FROM boards ORDER BY id ASC');
+        res.json(result.recordset);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 module.exports = router;

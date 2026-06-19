@@ -1,105 +1,128 @@
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+require('dotenv').config();
+const sql = require('mssql');
 
-// Connect to SQLite database
-const dbPath = path.resolve(__dirname, 'database.sqlite');
-const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.error('Error opening database', err.message);
-    } else {
-        console.log('Connected to the SQLite database.');
-        // Create tables
-        db.serialize(() => {
-            // Enable foreign keys
-            db.run('PRAGMA foreign_keys = ON');
-
-            db.run(`CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL,
-                role TEXT DEFAULT 'user',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )`);
-
-            db.run(`CREATE TABLE IF NOT EXISTS site_visits (
-                date DATE PRIMARY KEY,
-                count INTEGER DEFAULT 0
-            )`);
-
-            db.run(`CREATE TABLE IF NOT EXISTS posts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                content TEXT NOT NULL,
-                author TEXT NOT NULL,
-                image_url TEXT,
-                board_id INTEGER DEFAULT 1,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (board_id) REFERENCES boards(id) ON DELETE SET DEFAULT
-            )`);
-
-            // Try to add board_id column to existing posts table
-            db.run("ALTER TABLE posts ADD COLUMN board_id INTEGER DEFAULT 1 REFERENCES boards(id)", (err) => {
-                // Ignore error if column already exists
-            });
-
-            db.run(`CREATE TABLE IF NOT EXISTS boards (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL,
-                description TEXT
-            )`, () => {
-                // Seed default boards
-                const defaultBoards = [
-                    { id: 1, name: '🎓 校園閒聊', description: '綜合討論' },
-                    { id: 2, name: '🍔 逢甲美食', description: '便當街、周邊美食' },
-                    { id: 3, name: '📚 課程討論', description: '選課、教授評價' },
-                    { id: 4, name: '🏠 租屋資訊', description: '逢甲周邊租屋' },
-                    { id: 5, name: '🤝 二手交易', description: '課本、機車、生活用品' },
-                    { id: 6, name: '🎸 社團活動', description: '各系學會、社團宣傳' }
-                ];
-
-                const insertBoard = db.prepare('INSERT OR IGNORE INTO boards (id, name, description) VALUES (?, ?, ?)');
-                defaultBoards.forEach(board => {
-                    insertBoard.run(board.id, board.name, board.description);
-                });
-                insertBoard.finalize();
-            });
-
-            db.run(`CREATE TABLE IF NOT EXISTS board_moderators (
-                board_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                UNIQUE(board_id, user_id),
-                FOREIGN KEY (board_id) REFERENCES boards(id) ON DELETE CASCADE,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )`);
-
-            db.run(`CREATE TABLE IF NOT EXISTS replies (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                post_id INTEGER NOT NULL,
-                content TEXT NOT NULL,
-                author TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
-            )`);
-
-            db.run(`CREATE TABLE IF NOT EXISTS post_likes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                post_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                UNIQUE(post_id, user_id),
-                FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )`);
-
-            db.run(`CREATE TABLE IF NOT EXISTS post_saves (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                post_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                UNIQUE(post_id, user_id),
-                FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )`);
-        });
+const config = {
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    server: process.env.DB_SERVER,
+    database: process.env.DB_NAME,
+    options: {
+        encrypt: true,
+        trustServerCertificate: false
     }
-});
+};
 
-module.exports = db;
+const poolPromise = new sql.ConnectionPool(config)
+    .connect()
+    .then(pool => {
+        console.log('Connected to Azure SQL Database');
+
+        const initScript = `
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'boards')
+            BEGIN
+                CREATE TABLE boards (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    name NVARCHAR(255) UNIQUE NOT NULL,
+                    description NVARCHAR(MAX)
+                );
+                
+                INSERT INTO boards (name, description) VALUES 
+                    (N'🎓 校園閒聊', N'綜合討論'),
+                    (N'🍔 逢甲美食', N'便當街、周邊美食'),
+                    (N'📚 課程討論', N'選課、教授評價'),
+                    (N'🏠 租屋資訊', N'逢甲周邊租屋'),
+                    (N'🤝 二手交易', N'課本、機車、生活用品'),
+                    (N'🎸 社團活動', N'各系學會、社團宣傳');
+            END
+
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'users')
+            BEGIN
+                CREATE TABLE users (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    username NVARCHAR(255) UNIQUE NOT NULL,
+                    password NVARCHAR(255) NOT NULL,
+                    role NVARCHAR(50) DEFAULT 'user',
+                    created_at DATETIME DEFAULT GETDATE()
+                )
+            END
+
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'site_visits')
+            BEGIN
+                CREATE TABLE site_visits (
+                    date DATE PRIMARY KEY,
+                    count INT DEFAULT 0
+                )
+            END
+
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'posts')
+            BEGIN
+                CREATE TABLE posts (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    title NVARCHAR(255) NOT NULL,
+                    content NVARCHAR(MAX) NOT NULL,
+                    author NVARCHAR(255) NOT NULL,
+                    image_url NVARCHAR(MAX),
+                    board_id INT DEFAULT 1,
+                    created_at DATETIME DEFAULT GETDATE(),
+                    FOREIGN KEY (board_id) REFERENCES boards(id) ON DELETE SET DEFAULT
+                )
+            END
+
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'board_moderators')
+            BEGIN
+                CREATE TABLE board_moderators (
+                    board_id INT NOT NULL,
+                    user_id INT NOT NULL,
+                    UNIQUE(board_id, user_id),
+                    FOREIGN KEY (board_id) REFERENCES boards(id) ON DELETE CASCADE,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE NO ACTION
+                )
+            END
+
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'replies')
+            BEGIN
+                CREATE TABLE replies (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    post_id INT NOT NULL,
+                    content NVARCHAR(MAX) NOT NULL,
+                    author NVARCHAR(255) NOT NULL,
+                    created_at DATETIME DEFAULT GETDATE(),
+                    FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+                )
+            END
+
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'post_likes')
+            BEGIN
+                CREATE TABLE post_likes (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    post_id INT NOT NULL,
+                    user_id INT NOT NULL,
+                    UNIQUE(post_id, user_id),
+                    FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE NO ACTION
+                )
+            END
+
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'post_saves')
+            BEGIN
+                CREATE TABLE post_saves (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    post_id INT NOT NULL,
+                    user_id INT NOT NULL,
+                    UNIQUE(post_id, user_id),
+                    FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE NO ACTION
+                )
+            END
+        `;
+
+        return pool.request().query(initScript).then(() => pool);
+    })
+    .catch(err => {
+        console.error('Database Connection Failed! Bad Config: ', err);
+    });
+
+module.exports = {
+    sql,
+    poolPromise
+};

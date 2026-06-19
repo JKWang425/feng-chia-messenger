@@ -1,5 +1,5 @@
 const bcrypt = require('bcryptjs');
-const db = require('./database');
+const { sql, poolPromise } = require('./database');
 
 const seedData = [
     {
@@ -38,59 +38,74 @@ const seedData = [
     }
 ];
 
-setTimeout(async () => {
+async function runSeed() {
     try {
         const adminPassword = await bcrypt.hash('admin123', 10);
-        
-        db.serialize(() => {
-            // Clear existing data
-            db.run('DELETE FROM replies');
-            db.run('DELETE FROM posts');
-            db.run('DELETE FROM users');
-            db.run('DELETE FROM site_visits');
+        const pool = await poolPromise;
+        console.log('Inserting seed data...');
 
-            console.log('Inserting seed data...');
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
 
-            db.run('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', ['admin', adminPassword, 'admin']);
+        try {
+            const request = new sql.Request(transaction);
 
+            // Clear existing data (order matters due to FK constraints)
+            await request.query('DELETE FROM replies');
+            await request.query('DELETE FROM post_likes');
+            await request.query('DELETE FROM post_saves');
+            await request.query('DELETE FROM posts');
+            await request.query('DELETE FROM board_moderators');
+            await request.query('DELETE FROM users');
+            await request.query('DELETE FROM site_visits');
+
+            // Insert admin
+            request.input('adminUser', sql.NVarChar, 'admin');
+            request.input('adminPass', sql.NVarChar, adminPassword);
+            request.input('adminRole', sql.NVarChar, 'admin');
+            await request.query('INSERT INTO users (username, password, role) VALUES (@adminUser, @adminPass, @adminRole)');
+
+            // Insert site visits
             const today = new Date().toISOString().split('T')[0];
-            db.run('INSERT INTO site_visits (date, count) VALUES (?, ?)', [today, 42]);
-            
             const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-            db.run('INSERT INTO site_visits (date, count) VALUES (?, ?)', [yesterday, 30]);
+            
+            request.input('today', sql.Date, today);
+            await request.query('INSERT INTO site_visits (date, count) VALUES (@today, 42)');
+            
+            request.input('yesterday', sql.Date, yesterday);
+            await request.query('INSERT INTO site_visits (date, count) VALUES (@yesterday, 30)');
 
-            const insertPost = db.prepare('INSERT INTO posts (title, content, author) VALUES (?, ?, ?)');
-            const insertReply = db.prepare('INSERT INTO replies (post_id, content, author) VALUES (?, ?, ?)');
+            // Insert posts and replies
+            for (const postData of seedData) {
+                const postReq = new sql.Request(transaction);
+                postReq.input('title', sql.NVarChar, postData.title);
+                postReq.input('content', sql.NVarChar, postData.content);
+                postReq.input('author', sql.NVarChar, postData.author);
+                const postRes = await postReq.query('INSERT INTO posts (title, content, author) OUTPUT INSERTED.id VALUES (@title, @content, @author)');
+                const postId = postRes.recordset[0].id;
 
-            let completedPosts = 0;
+                for (const reply of postData.replies) {
+                    const replyReq = new sql.Request(transaction);
+                    replyReq.input('postId', sql.Int, postId);
+                    replyReq.input('content', sql.NVarChar, reply.content);
+                    replyReq.input('author', sql.NVarChar, reply.author);
+                    await replyReq.query('INSERT INTO replies (post_id, content, author) VALUES (@postId, @content, @author)');
+                }
+            }
 
-            seedData.forEach((postData) => {
-                insertPost.run([postData.title, postData.content, postData.author], function(err) {
-                    if (err) {
-                        console.error(err);
-                        return;
-                    }
-                    
-                    const postId = this.lastID;
-                    
-                    postData.replies.forEach(reply => {
-                        insertReply.run([postId, reply.content, reply.author], (err) => {
-                            if (err) console.error(err);
-                        });
-                    });
+            await transaction.commit();
+            console.log('Seed data inserted successfully!');
+            process.exit(0);
+        } catch (err) {
+            await transaction.rollback();
+            throw err;
+        }
 
-                    completedPosts++;
-                    if (completedPosts === seedData.length) {
-                        console.log('Seed data inserted successfully!');
-                        insertPost.finalize();
-                        insertReply.finalize();
-                        
-                        setTimeout(() => db.close(), 1000);
-                    }
-                });
-            });
-        });
     } catch (err) {
         console.error('Seed Error:', err);
+        process.exit(1);
     }
-}, 1000);
+}
+
+// Wait for database table initialization in database.js to complete
+setTimeout(runSeed, 3000);

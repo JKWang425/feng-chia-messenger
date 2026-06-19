@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const db = require('../database');
+const { sql, poolPromise } = require('../database');
 const { JWT_SECRET } = require('../middleware/auth');
 
 router.post('/register', async (req, res) => {
@@ -14,30 +14,35 @@ router.post('/register', async (req, res) => {
 
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
-
-        db.run('INSERT INTO users (username, password) VALUES (?, ?)', [username, hashedPassword], function (err) {
-            if (err) {
-                if (err.message.includes('UNIQUE constraint failed')) {
-                    return res.status(400).json({ error: 'Username already exists' });
-                }
-                return res.status(500).json({ error: err.message });
-            }
-            res.status(201).json({ message: 'User registered successfully', userId: this.lastID });
-        });
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('username', sql.NVarChar, username)
+            .input('password', sql.NVarChar, hashedPassword)
+            .query('INSERT INTO users (username, password) OUTPUT INSERTED.id VALUES (@username, @password)');
+        
+        res.status(201).json({ message: 'User registered successfully', userId: result.recordset[0].id });
     } catch (err) {
+        if (err.number === 2627) {
+            return res.status(400).json({ error: 'Username already exists' });
+        }
         res.status(500).json({ error: err.message });
     }
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
     const { username, password } = req.body;
 
     if (!username || !password) {
         return res.status(400).json({ error: 'Username and password are required' });
     }
 
-    db.get('SELECT * FROM users WHERE username = ?', [username], async (err, user) => {
-        if (err) return res.status(500).json({ error: err.message });
+    try {
+        const pool = await poolPromise;
+        const userResult = await pool.request()
+            .input('username', sql.NVarChar, username)
+            .query('SELECT * FROM users WHERE username = @username');
+            
+        const user = userResult.recordset[0];
         if (!user) return res.status(401).json({ error: 'Invalid username or password' });
 
         const isMatch = await bcrypt.compare(password, user.password);
@@ -52,11 +57,15 @@ router.post('/login', (req, res) => {
             maxAge: 24 * 60 * 60 * 1000
         });
 
-        db.all('SELECT board_id FROM board_moderators WHERE user_id = ?', [user.id], (err, mods) => {
-            const moderatedBoards = mods ? mods.map(m => m.board_id) : [];
-            res.json({ message: 'Logged in successfully', user: { id: user.id, username: user.username, role: user.role, moderated_boards: moderatedBoards }, token });
-        });
-    });
+        const modsResult = await pool.request()
+            .input('user_id', sql.Int, user.id)
+            .query('SELECT board_id FROM board_moderators WHERE user_id = @user_id');
+            
+        const moderatedBoards = modsResult.recordset ? modsResult.recordset.map(m => m.board_id) : [];
+        res.json({ message: 'Logged in successfully', user: { id: user.id, username: user.username, role: user.role, moderated_boards: moderatedBoards }, token });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 router.post('/logout', (req, res) => {
@@ -64,16 +73,19 @@ router.post('/logout', (req, res) => {
     res.json({ message: 'Logged out successfully' });
 });
 
-router.get('/me', (req, res) => {
+router.get('/me', async (req, res) => {
     const token = req.cookies.token;
     if (!token) return res.json({ user: null });
 
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
-        db.all('SELECT board_id FROM board_moderators WHERE user_id = ?', [decoded.id], (err, mods) => {
-            const moderatedBoards = mods ? mods.map(m => m.board_id) : [];
-            res.json({ user: { ...decoded, moderated_boards: moderatedBoards } });
-        });
+        const pool = await poolPromise;
+        const modsResult = await pool.request()
+            .input('user_id', sql.Int, decoded.id)
+            .query('SELECT board_id FROM board_moderators WHERE user_id = @user_id');
+            
+        const moderatedBoards = modsResult.recordset ? modsResult.recordset.map(m => m.board_id) : [];
+        res.json({ user: { ...decoded, moderated_boards: moderatedBoards } });
     } catch (err) {
         res.json({ user: null });
     }
