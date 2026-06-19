@@ -4,8 +4,9 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { sql, poolPromise } = require('../database');
 const { JWT_SECRET } = require('../middleware/auth');
+const { authLimiter } = require('../middleware/rateLimiter');
 
-router.post('/register', async (req, res) => {
+router.post('/register', authLimiter, async (req, res) => {
     const { username, password } = req.body;
 
     if (!username || !password) {
@@ -29,7 +30,7 @@ router.post('/register', async (req, res) => {
     }
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
     const { username, password } = req.body;
 
     if (!username || !password) {

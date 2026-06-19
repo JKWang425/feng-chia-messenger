@@ -33,9 +33,14 @@ app.use(helmet({
     crossOriginEmbedderPolicy: false,
 }));
 
+const { globalLimiter } = require('./middleware/rateLimiter');
+
 // Update CORS to allow cookies
 app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
-app.use(express.json());
+
+// 套用全域速率限制與 payload 限制
+app.use('/api', globalLimiter);
+app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 

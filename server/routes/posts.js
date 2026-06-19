@@ -5,6 +5,7 @@ const path = require('path');
 const WebSocket = require('ws');
 const { sql, poolPromise } = require('../database');
 const { authMiddleware, JWT_SECRET } = require('../middleware/auth');
+const { postLimiter } = require('../middleware/rateLimiter');
 const jwt = require('jsonwebtoken');
 
 // Setup multer storage
@@ -98,7 +99,7 @@ router.get('/', async (req, res) => {
 });
 
 // Create a new post (requires auth, supports image upload)
-router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
+router.post('/', authMiddleware, postLimiter, upload.single('image'), async (req, res) => {
     const { title, content, board_id } = req.body;
     const author = req.user.username; // Use username from JWT
     const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
@@ -132,7 +133,7 @@ router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
 });
 
 // Reply to a post (requires auth)
-router.post('/:id/replies', authMiddleware, async (req, res) => {
+router.post('/:id/replies', authMiddleware, postLimiter, async (req, res) => {
     const postId = req.params.id;
     const { content } = req.body;
     const author = req.user.username; // Use username from JWT
@@ -163,7 +164,7 @@ router.post('/:id/replies', authMiddleware, async (req, res) => {
 });
 
 // Toggle Like
-router.post('/:id/like', authMiddleware, async (req, res) => {
+router.post('/:id/like', authMiddleware, postLimiter, async (req, res) => {
     const postId = req.params.id;
     const userId = req.user.id;
 
@@ -193,7 +194,7 @@ router.post('/:id/like', authMiddleware, async (req, res) => {
 });
 
 // Toggle Save
-router.post('/:id/save', authMiddleware, async (req, res) => {
+router.post('/:id/save', authMiddleware, postLimiter, async (req, res) => {
     const postId = req.params.id;
     const userId = req.user.id;
 
