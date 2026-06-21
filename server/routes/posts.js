@@ -39,33 +39,61 @@ const getOptionalUserId = (req) => {
     }
 };
 
-// Get all posts with their replies, likes, and saves
+// Get posts with pagination, replies, likes, and saves
 router.get('/', async (req, res) => {
     const currentUserId = getOptionalUserId(req);
     const boardId = req.query.board_id;
     const sort = req.query.sort || 'latest'; // 'latest' or 'popular'
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 15));
+    const offset = (page - 1) * limit;
+    const search = req.query.search;
 
     try {
         const pool = await poolPromise;
-        let query = 'SELECT * FROM posts';
+
+        let conditions = [];
+        if (boardId) conditions.push('board_id = @boardId');
+        if (search) conditions.push('(title LIKE @search OR content LIKE @search)');
+        let whereClause = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
+
+        // --- Count total posts ---
+        let countQuery = 'SELECT COUNT(*) AS total FROM posts' + whereClause;
+        const countRequest = pool.request();
+        if (boardId) countRequest.input('boardId', sql.Int, boardId);
+        if (search) countRequest.input('search', sql.NVarChar, `%${search}%`);
+
+        const countResult = await countRequest.query(countQuery);
+        const totalPosts = countResult.recordset[0].total;
+
+        // --- Fetch paginated posts ---
+        let query = 'SELECT * FROM posts' + whereClause;
         let request = pool.request();
 
-        if (boardId) {
-            query += ' WHERE board_id = @boardId';
-            request.input('boardId', sql.Int, boardId);
+        if (boardId) request.input('boardId', sql.Int, boardId);
+        if (search) request.input('search', sql.NVarChar, `%${search}%`);
+
+        query += ' ORDER BY created_at DESC OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY';
+        request.input('offset', sql.Int, offset);
+        request.input('limit', sql.Int, limit);
+
+        const postsResult = await request.query(query);
+        const posts = postsResult.recordset;
+
+        if (posts.length === 0) {
+            return res.json({ posts: [], totalPosts, page, limit, hasMore: false });
         }
 
-        // Sort by created_at first. For 'popular', we will sort in memory after attaching likes/replies.
-        query += ' ORDER BY created_at DESC';
+        // --- Fetch related data only for current page's posts ---
+        const postIds = posts.map(p => p.id);
+        const idList = postIds.join(',');
 
-        const [postsResult, repliesResult, likesResult, savesResult] = await Promise.all([
-            request.query(query),
-            pool.request().query('SELECT * FROM replies ORDER BY created_at ASC'),
-            pool.request().query('SELECT * FROM post_likes'),
-            pool.request().query('SELECT * FROM post_saves')
+        const [repliesResult, likesResult, savesResult] = await Promise.all([
+            pool.request().query(`SELECT * FROM replies WHERE post_id IN (${idList}) ORDER BY created_at ASC`),
+            pool.request().query(`SELECT * FROM post_likes WHERE post_id IN (${idList})`),
+            pool.request().query(`SELECT * FROM post_saves WHERE post_id IN (${idList})`)
         ]);
 
-        const posts = postsResult.recordset;
         const replies = repliesResult.recordset;
         const likes = likesResult.recordset;
         const saves = savesResult.recordset;
@@ -82,16 +110,17 @@ router.get('/', async (req, res) => {
                 savesCount: postSaves.length,
                 isLiked: currentUserId ? postLikes.some(l => l.user_id === currentUserId) : false,
                 isSaved: currentUserId ? postSaves.some(s => s.user_id === currentUserId) : false,
-                popularityScore: postLikes.length * 2 + postReplies.length // Simple metric for popular sorting
+                popularityScore: postLikes.length * 2 + postReplies.length
             };
         });
 
-        // In-memory sorting for popular
+        // In-memory sorting for popular (within this page)
         if (sort === 'popular') {
             postsWithDetails.sort((a, b) => b.popularityScore - a.popularityScore);
         }
 
-        res.json(postsWithDetails);
+        const hasMore = page * limit < totalPosts;
+        res.json({ posts: postsWithDetails, totalPosts, page, limit, hasMore });
 
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -180,13 +209,24 @@ router.post('/:id/like', authMiddleware, postLimiter, async (req, res) => {
                 .input('postId', sql.Int, postId)
                 .input('userId', sql.Int, userId)
                 .query('DELETE FROM post_likes WHERE post_id = @postId AND user_id = @userId');
-            res.json({ message: 'Like removed', isLiked: false });
+            // Get updated count
+            const countResult = await pool.request()
+                .input('postId2', sql.Int, postId)
+                .query('SELECT COUNT(*) AS cnt FROM post_likes WHERE post_id = @postId2');
+            const newCount = countResult.recordset[0].cnt;
+            if (req.wss) broadcast(req.wss, { type: 'LIKE_UPDATED', data: { post_id: Number(postId), likesCount: newCount } });
+            res.json({ message: 'Like removed', isLiked: false, likesCount: newCount });
         } else {
             await pool.request()
                 .input('postId', sql.Int, postId)
                 .input('userId', sql.Int, userId)
                 .query('INSERT INTO post_likes (post_id, user_id) VALUES (@postId, @userId)');
-            res.json({ message: 'Like added', isLiked: true });
+            const countResult = await pool.request()
+                .input('postId2', sql.Int, postId)
+                .query('SELECT COUNT(*) AS cnt FROM post_likes WHERE post_id = @postId2');
+            const newCount = countResult.recordset[0].cnt;
+            if (req.wss) broadcast(req.wss, { type: 'LIKE_UPDATED', data: { post_id: Number(postId), likesCount: newCount } });
+            res.json({ message: 'Like added', isLiked: true, likesCount: newCount });
         }
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -210,13 +250,23 @@ router.post('/:id/save', authMiddleware, postLimiter, async (req, res) => {
                 .input('postId', sql.Int, postId)
                 .input('userId', sql.Int, userId)
                 .query('DELETE FROM post_saves WHERE post_id = @postId AND user_id = @userId');
-            res.json({ message: 'Save removed', isSaved: false });
+            const countResult = await pool.request()
+                .input('postId2', sql.Int, postId)
+                .query('SELECT COUNT(*) AS cnt FROM post_saves WHERE post_id = @postId2');
+            const newCount = countResult.recordset[0].cnt;
+            if (req.wss) broadcast(req.wss, { type: 'SAVE_UPDATED', data: { post_id: Number(postId), savesCount: newCount } });
+            res.json({ message: 'Save removed', isSaved: false, savesCount: newCount });
         } else {
             await pool.request()
                 .input('postId', sql.Int, postId)
                 .input('userId', sql.Int, userId)
                 .query('INSERT INTO post_saves (post_id, user_id) VALUES (@postId, @userId)');
-            res.json({ message: 'Save added', isSaved: true });
+            const countResult = await pool.request()
+                .input('postId2', sql.Int, postId)
+                .query('SELECT COUNT(*) AS cnt FROM post_saves WHERE post_id = @postId2');
+            const newCount = countResult.recordset[0].cnt;
+            if (req.wss) broadcast(req.wss, { type: 'SAVE_UPDATED', data: { post_id: Number(postId), savesCount: newCount } });
+            res.json({ message: 'Save added', isSaved: true, savesCount: newCount });
         }
     } catch (err) {
         res.status(500).json({ error: err.message });

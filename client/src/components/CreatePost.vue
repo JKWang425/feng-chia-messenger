@@ -83,10 +83,14 @@ const submitPost = async () => {
       emit('post-created');
     }
   } catch (error) {
-    if(error.response?.status === 401) {
+    if (error.response?.status === 429) {
+      alert(error.response.data?.error || '你發文太頻繁了，請稍候再試！');
+    } else if(error.response?.status === 401) {
       alert("請先登入才能發文！");
+    } else {
+      console.error('Error submitting post:', error);
+      alert('發文失敗，請稍後再試');
     }
-    console.error('Error submitting post:', error);
   } finally {
     isSubmitting.value = false;
   }

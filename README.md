@@ -5,6 +5,7 @@
 ## ✨ 核心功能 (Features)
 
 * 📋 **多元看板分類**：內建「校園閒聊、逢甲美食、課程討論、租屋資訊、二手交易、社團活動」等專屬看板。
+* 🔍 **模糊搜尋**：支援透過關鍵字快速尋找相關文章標題與內容。
 * 🔥 **貼文動態排序**：支援依照「最新發布」或「熱門程度 (按讚與留言數)」來排序貼文。
 * 🔐 **會員與權限系統**：
   * 使用 JWT 實作安全的登入/註冊機制。
@@ -13,6 +14,7 @@
 * 💬 **即時互動 (WebSockets)**：當有新貼文、新留言或貼文被刪除時，畫面會即時更新，無需重新整理網頁。
 * ❤️ **互動功能**：支援貼文按讚、收藏，以及上傳圖片功能。
 * 📄 **匯出 PDF**：支援將單篇貼文內容快速匯出成 PDF 檔案。
+* 🛡️ **資安防護 (Rate Limiting)**：內建全域防護罩、防暴力破解登入限制，以及防洗版機制，保護伺服器不被惡意癱瘓。
 
 ---
 
@@ -27,9 +29,10 @@
 
 ### 後端 (Backend)
 * **框架**: Node.js + Express
-* **資料庫**: SQLite (輕量、免安裝)
+* **資料庫**: Azure SQL Database (使用 `mssql` 套件，支援 T-SQL)
 * **即時通訊**: `ws` (WebSocket)
 * **身分驗證**: `jsonwebtoken` (JWT), `bcryptjs`
+* **資安防護**: `express-rate-limit`, `helmet`
 * **檔案上傳**: `multer`
 
 ---
@@ -39,11 +42,21 @@
 本專案分為 `client` (前端) 與 `server` (後端)，請開啟兩個終端機分別執行。
 
 ### 1. 啟動後端伺服器 (Port 3000)
+請先在 `server` 目錄下建立 `.env` 檔案，填寫 Azure SQL 資料庫連線資訊：
+```env
+DB_USER=你的帳號
+DB_PASSWORD=你的密碼
+DB_SERVER=你的伺服器.database.windows.net
+DB_NAME=你的資料庫名稱
+```
+接著執行：
 ```bash
 cd server
 npm install
 npm run dev
 ```
+
+> **小撇步**：第一次連線成功後，可以另外開一個終端機執行 `npm run seed` 來匯入假資料！
 
 ### 2. 啟動前端開發伺服器 (Port 5173)
 ```bash
@@ -82,4 +95,4 @@ npm run dev
 只要將程式碼 Push 到 GitHub `main` 分支，GitHub Actions 就會自動進行編譯，並無縫部署到 Azure App Service (Linux) 雲端主機上。
 
 > **⚠️ 注意事項**：
-> 由於部署在 Azure F1 免費層，後端安裝使用 `bcryptjs` 以避免原生 `bcrypt` 或 `sqlite3` 的 C++ 編譯問題。GitHub Actions 內部會自動處理 sqlite3 的二進位檔建置相容性。
+> 由於程式碼中不包含 `.env` 密碼檔，請務必在 Azure App Service 的「環境變數 (Environment variables)」設定中，手動加入 `DB_USER`、`DB_PASSWORD`、`DB_SERVER` 與 `DB_NAME` 才能成功連線資料庫！並且別忘了在 SQL 伺服器的防火牆中勾選「允許 Azure 服務和資源存取此伺服器」。

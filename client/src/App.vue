@@ -45,6 +45,18 @@
             <button :class="['btn-sort', { active: currentSort === 'latest' }]" @click="currentSort = 'latest'; fetchPosts()">最新</button>
             <button :class="['btn-sort', { active: currentSort === 'popular' }]" @click="currentSort = 'popular'; fetchPosts()">熱門</button>
           </div>
+          
+          <div class="search-bar">
+            <input 
+              type="text" 
+              v-model="searchQuery" 
+              @keyup.enter="fetchPosts()" 
+              placeholder="搜尋標題或內容..." 
+              class="search-input"
+            />
+            <button @click="fetchPosts()" class="btn-search">搜尋</button>
+          </div>
+
           <button @click="openCreatePost" class="btn-create">
             <PlusCircle class="icon-md" /> 發布新貼文
           </button>
@@ -65,6 +77,10 @@
             目前還沒有貼文喔，來當第一個發文的人吧！
           </div>
           <div v-if="loading" class="loading-state">載入中...</div>
+          <div v-if="loadingMore" class="loading-state">載入更多文章中...</div>
+          <div v-if="!loading && !loadingMore && !hasMore && posts.length > 0" class="loading-state" style="opacity: 0.5;">
+            — 已經到底了 —
+          </div>
         </div>
       </div>
       
@@ -98,6 +114,7 @@ import AdminDashboard from './components/AdminDashboard.vue';
 
 const posts = ref([]);
 const loading = ref(true);
+const loadingMore = ref(false);
 const showCreateModal = ref(false);
 const showAuthModal = ref(false);
 const showAdmin = ref(false);
@@ -105,8 +122,13 @@ const currentUser = ref(null);
 const boards = ref([]);
 const currentBoardId = ref(null);
 const currentSort = ref('latest');
+const currentPage = ref(1);
+const hasMore = ref(false);
+const searchQuery = ref('');
 
 let ws = null;
+let wsReconnectDelay = 3000; // 初始 3 秒
+const WS_MAX_DELAY = 60000;  // 最多等 60 秒
 
 const fetchBoards = async () => {
   try {
@@ -139,15 +161,49 @@ const logout = async () => {
 const fetchPosts = async () => {
   try {
     loading.value = true;
-    let url = `/api/posts?sort=${currentSort.value}`;
+    currentPage.value = 1;
+    let url = `/api/posts?sort=${currentSort.value}&page=1&limit=15`;
     if (currentBoardId.value) url += `&board_id=${currentBoardId.value}`;
+    if (searchQuery.value) url += `&search=${encodeURIComponent(searchQuery.value)}`;
     
     const response = await axios.get(url);
-    posts.value = response.data;
+    posts.value = response.data.posts;
+    hasMore.value = response.data.hasMore;
   } catch (error) {
     console.error('Error fetching posts:', error);
   } finally {
     loading.value = false;
+  }
+};
+
+const loadMorePosts = async () => {
+  if (loadingMore.value || !hasMore.value) return;
+  loadingMore.value = true;
+  try {
+    const nextPage = currentPage.value + 1;
+    let url = `/api/posts?sort=${currentSort.value}&page=${nextPage}&limit=15`;
+    if (currentBoardId.value) url += `&board_id=${currentBoardId.value}`;
+    if (searchQuery.value) url += `&search=${encodeURIComponent(searchQuery.value)}`;
+
+    const response = await axios.get(url);
+    posts.value.push(...response.data.posts);
+    hasMore.value = response.data.hasMore;
+    currentPage.value = nextPage;
+  } catch (error) {
+    console.error('Error loading more posts:', error);
+  } finally {
+    loadingMore.value = false;
+  }
+};
+
+// Infinite Scroll handler
+const handleScroll = () => {
+  const scrollHeight = document.documentElement.scrollHeight;
+  const scrollTop = document.documentElement.scrollTop;
+  const clientHeight = document.documentElement.clientHeight;
+  // 當距離底部剩 300px 時自動載入下一頁
+  if (scrollTop + clientHeight >= scrollHeight - 300) {
+    loadMorePosts();
   }
 };
 
@@ -163,6 +219,11 @@ const setupWebSocket = () => {
   const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsHost = import.meta.env.PROD ? window.location.host : 'localhost:3000';
   ws = new WebSocket(`${wsProtocol}//${wsHost}`);
+
+  ws.onopen = () => {
+    // 連線成功，重設延遲為最短
+    wsReconnectDelay = 3000;
+  };
   
   ws.onmessage = (event) => {
     const message = JSON.parse(event.data);
@@ -176,13 +237,20 @@ const setupWebSocket = () => {
         post.replies.push(message.data);
       }
     } else if (message.type === 'POST_DELETED') {
-      // Refresh the feed when admin deletes something
-      fetchPosts();
+      posts.value = posts.value.filter(p => p.id !== message.data.id);
+    } else if (message.type === 'LIKE_UPDATED') {
+      const post = posts.value.find(p => p.id === message.data.post_id);
+      if (post) post.likesCount = message.data.likesCount;
+    } else if (message.type === 'SAVE_UPDATED') {
+      const post = posts.value.find(p => p.id === message.data.post_id);
+      if (post) post.savesCount = message.data.savesCount;
     }
   };
 
   ws.onclose = () => {
-    setTimeout(setupWebSocket, 3000);
+    // 指數退避重連：每次斷線等待時間加倍，最多 60 秒
+    setTimeout(setupWebSocket, wsReconnectDelay);
+    wsReconnectDelay = Math.min(wsReconnectDelay * 2, WS_MAX_DELAY);
   };
 };
 
@@ -209,10 +277,12 @@ onMounted(() => {
   fetchBoards();
   fetchPosts();
   setupWebSocket();
+  window.addEventListener('scroll', handleScroll);
 });
 
 onUnmounted(() => {
   if (ws) ws.close();
+  window.removeEventListener('scroll', handleScroll);
 });
 </script>
 
@@ -252,6 +322,12 @@ onUnmounted(() => {
 .btn-sort { padding: 8px 16px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.2); background: transparent; color: var(--text-secondary); cursor: pointer; transition: 0.2s; font-weight: 600; }
 .btn-sort:hover { background: rgba(255,255,255,0.05); }
 .btn-sort.active { background: rgba(255,255,255,0.1); color: var(--text-primary); border-color: var(--primary-color); }
+
+.search-bar { display: flex; align-items: center; gap: 8px; flex-grow: 1; max-width: 400px; margin: 0 16px; }
+.search-input { flex-grow: 1; padding: 10px 16px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.2); color: #fff; font-size: 1rem; transition: 0.2s; outline: none; }
+.search-input:focus { border-color: var(--primary-color); background: rgba(0,0,0,0.4); }
+.btn-search { padding: 10px 16px; border-radius: 20px; border: none; background: rgba(255,255,255,0.1); color: #fff; cursor: pointer; transition: 0.2s; font-weight: bold; }
+.btn-search:hover { background: rgba(255,255,255,0.2); }
 
 .post-feed { display: flex; flex-direction: column; gap: 20px; }
 .empty-state, .loading-state { text-align: center; padding: 40px; color: var(--text-secondary); font-size: 1.2rem; }

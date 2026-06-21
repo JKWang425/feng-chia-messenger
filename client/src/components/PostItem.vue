@@ -10,8 +10,8 @@
         <button v-if="canDelete" @click="deletePost" class="btn-icon btn-delete" title="刪除貼文">
           <Trash2 class="icon-sm" />
         </button>
-        <button @click="downloadPdf" class="btn-icon" title="下載 PDF">
-          <Download class="icon-sm" />
+        <button @click="printPost" class="btn-icon" title="列印 / 匯出 PDF">
+          <Printer class="icon-sm" />
         </button>
       </div>
     </div>
@@ -82,8 +82,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import axios from 'axios';
-import { User, MessageSquare, ChevronDown, Download, Send, Trash2, Heart, Bookmark } from 'lucide-vue-next';
-import { PDFDocument, StandardFonts } from 'pdf-lib';
+import { User, MessageSquare, ChevronDown, Send, Trash2, Heart, Bookmark, Printer } from 'lucide-vue-next';
 
 const props = defineProps({
   post: { type: Object, required: true },
@@ -127,6 +126,8 @@ const deletePost = async () => {
   } catch (err) {
     if (err.response?.status === 403) {
       alert('您沒有權限刪除這篇貼文');
+    } else if (err.response?.status === 429) {
+      alert(err.response.data?.error || '操作太頻繁了，請稍後再試！');
     } else {
       console.error('Failed to delete post:', err);
       alert('刪除失敗');
@@ -139,9 +140,13 @@ const toggleLike = async () => {
   try {
     const res = await axios.post(`/api/posts/${props.post.id}/like`, {}, { withCredentials: true });
     props.post.isLiked = res.data.isLiked;
-    props.post.likesCount += res.data.isLiked ? 1 : -1;
+    props.post.likesCount = res.data.likesCount;
   } catch (e) {
-    console.error('Like failed', e);
+    if (e.response?.status === 429) {
+      alert(e.response.data?.error || '你按太快了，請稍後再試！');
+    } else {
+      console.error('Like failed', e);
+    }
   }
 };
 
@@ -150,9 +155,13 @@ const toggleSave = async () => {
   try {
     const res = await axios.post(`/api/posts/${props.post.id}/save`, {}, { withCredentials: true });
     props.post.isSaved = res.data.isSaved;
-    props.post.savesCount += res.data.isSaved ? 1 : -1;
+    props.post.savesCount = res.data.savesCount;
   } catch (e) {
-    console.error('Save failed', e);
+    if (e.response?.status === 429) {
+      alert(e.response.data?.error || '你按太快了，請稍後再試！');
+    } else {
+      console.error('Save failed', e);
+    }
   }
 };
 
@@ -170,35 +179,38 @@ const submitReply = async () => {
       emit('reply-added');
     }
   } catch (error) {
-    console.error('Error submitting reply:', error);
+    if (error.response?.status === 429) {
+      alert(error.response.data?.error || '留言太頻繁了，請稍後再試！');
+    } else {
+      console.error('Error submitting reply:', error);
+    }
   } finally {
     isSubmitting.value = false;
   }
 };
 
-const downloadPdf = async () => {
-  try {
-    const pdfDoc = await PDFDocument.create();
-    const page = pdfDoc.addPage();
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    
-    // Fallback for Chinese characters in pdf-lib standard fonts is tricky, 
-    // but for demonstration we'll just write out the data.
-    page.drawText(`Feng Chia Messenger - Post ID: ${props.post.id}`, { x: 50, y: 800, size: 20, font });
-    page.drawText(`Author: ${props.post.author}`, { x: 50, y: 770, size: 14, font });
-    // Use ascii or simple representation since standard fonts drop CJK
-    page.drawText(`Content length: ${props.post.content.length} characters`, { x: 50, y: 740, size: 12, font });
-
-    const pdfBytes = await pdfDoc.save();
-    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `FCU-Post-${props.post.id}.pdf`;
-    link.click();
-  } catch (e) {
-    console.error("PDF Export Error", e);
-  }
+const printPost = () => {
+  const printWindow = window.open('', '_blank');
+  const boardLabel = boardName.value;
+  printWindow.document.write(`
+    <html><head><title>${props.post.title}</title>
+    <style>body{font-family:sans-serif;padding:40px;max-width:700px;margin:auto}
+    h1{font-size:1.5rem}p{line-height:1.8;white-space:pre-wrap}
+    .meta{color:#888;margin-bottom:20px;font-size:0.9rem}
+    .reply{border-left:3px solid #ddd;padding-left:12px;margin:12px 0}
+    .reply-author{font-weight:bold;color:#555}
+    </style></head><body>
+    <h1>${props.post.title}</h1>
+    <div class="meta">[${boardLabel}] by ${props.post.author}</div>
+    <p>${props.post.content}</p>
+    ${props.post.image_url ? `<img src="${props.post.image_url}" style="max-width:100%">` : ''}
+    <hr>
+    <h3>留言 (${props.post.replies?.length || 0})</h3>
+    ${(props.post.replies || []).map(r => `<div class="reply"><span class="reply-author">${r.author}</span><p>${r.content}</p></div>`).join('')}
+    </body></html>
+  `);
+  printWindow.document.close();
+  printWindow.print();
 };
 </script>
 
