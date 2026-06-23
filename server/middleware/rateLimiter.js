@@ -13,6 +13,11 @@ const globalLimiter = rateLimit({
 const authLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hour
     max: 10,
+    keyGenerator: (req) => {
+        // 如果請求中有 username（例如登入/註冊），則以 IP + username 作為限制基準
+        // 這樣可以避免同一個 IP 下的其他使用者被無辜封鎖
+        return req.body.username ? `${req.ip}_${req.body.username}` : req.ip;
+    },
     message: { error: 'Too many login attempts, please try again after an hour.' }
 });
 
